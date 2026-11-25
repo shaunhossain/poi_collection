@@ -1,0 +1,92 @@
+name: poi_collection
+
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: poi_collection_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-barikoi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-barikoi_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-poi_collection}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barikoi} -d ${POSTGRES_DB:-poi_collection}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: poi_collection_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-4000}:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data/crops:/app/data/crops
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-barikoi}:${POSTGRES_PASSWORD:-barikoi_secret}@db:5432/${POSTGRES_DB:-poi_collection}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3-vl:8b-instruct}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      CROPS_DIR: /app/data/crops
+      CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/pois || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BARIKOI_API_KEY: ${NEXT_PUBLIC_BARIKOI_API_KEY:-}
+        NEXT_PUBLIC_BARIKOI_ADMIN_KEY: ${NEXT_PUBLIC_BARIKOI_ADMIN_KEY:-}
+        NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-https://map.barikoi.com/styles/osm_barikoi_v1/style.json}
+        NEXT_PUBLIC_THIRDEYE_TILE_URL: ${NEXT_PUBLIC_THIRDEYE_TILE_URL:-https://tiles.bmapsbd.com/ThirdEye360}
+        NEXT_PUBLIC_DEFAULT_LAT: ${NEXT_PUBLIC_DEFAULT_LAT:-23.8103}
+        NEXT_PUBLIC_DEFAULT_LNG: ${NEXT_PUBLIC_DEFAULT_LNG:-90.4125}
+        NEXT_PUBLIC_DEFAULT_ZOOM: ${NEXT_PUBLIC_DEFAULT_ZOOM:-14}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
+    container_name: poi_collection_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BARIKOI_API_KEY=${NEXT_PUBLIC_BARIKOI_API_KEY:-}
+      - NEXT_PUBLIC_BARIKOI_ADMIN_KEY=${NEXT_PUBLIC_BARIKOI_ADMIN_KEY:-}
+      - NEXT_PUBLIC_MAP_STYLE_URL=${NEXT_PUBLIC_MAP_STYLE_URL:-https://map.barikoi.com/styles/osm_barikoi_v1/style.json}
+      - NEXT_PUBLIC_THIRDEYE_TILE_URL=${NEXT_PUBLIC_THIRDEYE_TILE_URL:-https://tiles.bmapsbd.com/ThirdEye360}
+      - NEXT_PUBLIC_DEFAULT_LAT=${NEXT_PUBLIC_DEFAULT_LAT:-23.8103}
+      - NEXT_PUBLIC_DEFAULT_LNG=${NEXT_PUBLIC_DEFAULT_LNG:-90.4125}
+      - NEXT_PUBLIC_DEFAULT_ZOOM=${NEXT_PUBLIC_DEFAULT_ZOOM:-14}
+      - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  pgdata:
