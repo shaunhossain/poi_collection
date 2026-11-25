@@ -4,6 +4,12 @@ An interactive **Street View POI Extraction & Map Dashboard** built with **Next.
 
 ---
 
+## UI Preview
+
+![POI Collection Dashboard](docs/dashboard-preview.png)
+
+---
+
 ## Architecture
 
 | Service | Container | Port | Stack |
